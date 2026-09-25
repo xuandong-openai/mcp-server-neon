@@ -189,7 +189,9 @@ describe('/api/list-tools endpoint', () => {
     it('surfaces the project-scope notice at top level (not in each description)', async () => {
       const body = await callListTools({ projectId: 'proj-123' });
       expect(
-        body.notices?.some((n) => n.includes('always pass `project_id`')),
+        body.notices?.some((n) =>
+          n.includes('always pass it on an unscoped connection'),
+        ),
       ).toBe(true);
       expect(body.notices?.join(' ')).not.toContain('proj-123');
       for (const tool of body.tools) {

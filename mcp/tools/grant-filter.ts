@@ -166,7 +166,7 @@ export function getAccessControlNotices(
   );
   if (hasProjectTools) {
     notices.push(
-      'Notice: On an unscoped connection, always pass `project_id`, even though the published schema marks it optional. ' +
+      'Notice: For tools with `project_id`, always pass it on an unscoped connection, even though the published schema marks it optional. ' +
         'A connection scoped to one project supplies it automatically when omitted; an explicit value must match the granted project. ' +
         'A project-scoped connection also hides project management tools such as list_projects and create_project. ' +
         'To change project scope, change or remove the projectId query param in the MCP server URL and reconnect. ' +
