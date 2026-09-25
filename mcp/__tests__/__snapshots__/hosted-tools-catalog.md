@@ -1,6 +1,6 @@
-# Hosted MCP tool catalog
+# Canonical MCP tool definitions
 
-Default-grant `tools/list` plus host flags. `public` means the unauthenticated docs MCP (`?category=docs`). `readOnlySafe` is the server read-only allowlist; `readOnlyHint` is the MCP annotation.
+Full internal `NEON_TOOLS` schemas plus host flags, before grant filtering or published-schema adaptation. `public` means the unauthenticated docs MCP (`?category=docs`). `readOnlySafe` is the server read-only allowlist; `readOnlyHint` is the MCP annotation.
 
 | name | title | description | arguments | public | kind | scope | alwaysAvailable | projectScoped | readOnlySafe | readOnlyHint | destructiveHint | idempotentHint | openWorldHint |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |

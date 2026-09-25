@@ -41,8 +41,9 @@ function toolByName(toolName: string): NeonTool | undefined {
 }
 
 /**
- * Project-scoped grants strip `project_id` from the published schema, so the
- * client can supply it only through the grant.
+ * Published schemas keep project_id optional across grants. Scoped grants
+ * supply the ID (rejecting an explicitly different one) before the original
+ * full handler schema validates it. Unscoped calls must supply their own ID.
  */
 export async function invokeTool(
   toolName: string,

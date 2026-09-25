@@ -1,5 +1,6 @@
 import { z } from 'zod/v3';
 import { z as z4 } from 'zod';
+import { InvalidArgumentError } from '../server/errors';
 import {
   SCOPE_CATEGORIES,
   type GrantContext,
@@ -17,6 +18,11 @@ export const ALWAYS_AVAILABLE_TOOLS: ReadonlySet<string> = new Set([
   'fetch',
 ]);
 
+// Hosts may cache this schema and its instructions independently of the grant.
+const PROJECT_ID_GUIDANCE =
+  'Required for an unscoped connection. May be omitted when the connection is ' +
+  'scoped to one project; if provided, it must match that project.';
+
 function isZod4Object(schema: unknown): schema is z4.ZodObject<z4.ZodRawShape> {
   return (
     typeof schema === 'object' &&
@@ -32,7 +38,10 @@ export function filterToolsForGrant(
 ): NeonTool[] {
   let filtered = applyScopeCategoryFilter(tools, grant.scopes);
   filtered = applyProjectScopeFilter(filtered, grant);
-  return filtered;
+  // Hosts can review and cache one schema independently of a user's grant.
+  // Keep project_id optional on the wire; the full handler schema still
+  // requires it after a scoped grant has supplied its project.
+  return filtered.map((tool) => optionalProjectIdSchema(tool) ?? tool);
 }
 
 /**
@@ -64,15 +73,10 @@ function applyProjectScopeFilter(
 ): NeonTool[] {
   if (!grant.projectId) return tools;
 
-  return tools
-    .filter((tool) => tool.projectScoped)
-    .map((tool) => {
-      const modified = removeProjectIdFromSchema(tool);
-      return modified ?? tool;
-    });
+  return tools.filter((tool) => tool.projectScoped);
 }
 
-function removeHostProjectId(tool: NeonTool): NeonTool | null {
+function optionalHostProjectId(tool: NeonTool): NeonTool | null {
   const schema = tool.inputSchema;
   if (!(schema instanceof z.ZodObject)) return null;
 
@@ -81,30 +85,50 @@ function removeHostProjectId(tool: NeonTool): NeonTool | null {
 
   return {
     ...tool,
-    inputSchema: schema.omit({ project_id: true }).strict(),
+    inputSchema: schema
+      .extend({
+        project_id: shape.project_id
+          .optional()
+          .describe(
+            [shape.project_id.description, PROJECT_ID_GUIDANCE]
+              .filter(Boolean)
+              .join(' '),
+          ),
+      })
+      .strict(),
   };
 }
 
-function removeGeneratedProjectId(tool: NeonTool): NeonTool | null {
+function optionalGeneratedProjectId(tool: NeonTool): NeonTool | null {
   const schema = tool.inputSchema;
   if (!isZod4Object(schema)) return null;
   if (!('project_id' in schema.shape)) return null;
-
-  const newShape = Object.fromEntries(
-    Object.entries(schema.shape).filter(([key]) => key !== 'project_id'),
-  );
+  const projectIdSchema = schema.shape.project_id;
 
   return {
     ...tool,
-    inputSchema: z4.strictObject(newShape),
+    inputSchema: z4.strictObject({
+      ...schema.shape,
+      project_id: z4
+        .optional(projectIdSchema)
+        .describe(
+          [
+            z4.globalRegistry.get(projectIdSchema)?.description,
+            PROJECT_ID_GUIDANCE,
+          ]
+            .filter(Boolean)
+            .join(' '),
+        ),
+    }),
   };
 }
 
-function removeProjectIdFromSchema(tool: NeonTool): NeonTool | null {
+function optionalProjectIdSchema(tool: NeonTool): NeonTool | null {
+  if (!tool.projectScoped) return null;
   if (tool.kind === 'generated') {
-    return removeGeneratedProjectId(tool);
+    return optionalGeneratedProjectId(tool);
   }
-  return removeHostProjectId(tool);
+  return optionalHostProjectId(tool);
 }
 
 /**
@@ -138,12 +162,14 @@ export function getAccessControlNotices(
       );
     }
   }
-  if (grant.projectId) {
+  const hasProjectTools = getFilteredTools(grant, readOnly).some(
+    (tool) => tool.projectScoped && schemaHasProjectId(tool.inputSchema),
+  );
+  if (hasProjectTools) {
     notices.push(
-      `Notice: The MCP server is currently configured and scoped to one project only (${grant.projectId}). ` +
-        'Project management tools have been removed. All remaining tools are scoped to this project and can only interact with it. ' +
-        'Do not send `project_id`; it is supplied by the connection. ' +
-        'This is intentional. If the user requests changes to another project, inform them about the project-scoping configuration. ' +
+      'Notice: For tools with `project_id`, supply it for an unscoped connection, even though the published schema marks it optional. ' +
+        'A connection scoped to one project supplies it automatically when omitted; an explicit value must match the granted project. ' +
+        'Project access is enforced by the connection grant. ' +
         'The user can remove project scoping by removing the projectId query param from the MCP server URL, ' +
         'and by logging out and back in after removing the param when using OAuth.',
     );
@@ -248,6 +274,11 @@ export function injectProjectId(
   if (tool && !tool.projectScoped) return args;
   if (tool?.inputSchema && !schemaHasProjectId(tool.inputSchema)) {
     return args;
+  }
+  if (args.project_id !== undefined && args.project_id !== grant.projectId) {
+    throw new InvalidArgumentError(
+      'project_id must match the project scoped to this connection',
+    );
   }
   return { ...args, project_id: grant.projectId };
 }

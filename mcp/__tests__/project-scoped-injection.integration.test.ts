@@ -1,7 +1,7 @@
 /**
- * A project-scoped grant has `projectId` stripped out of every published tool
- * schema, so the client cannot send it and `injectProjectId` is its only source.
- * That made the injection silently breakable: it used to write a key at the wrong
+ * Project-aware published tools accept an optional `project_id` for every grant.
+ * A scoped client can omit it and rely on `injectProjectId` to supply the grant.
+ * Injection was previously silently breakable: it used to write a key at the wrong
  * level, no handler read it, and the tools fell through to "use the only project
  * this account has" — which looks fine on an account with one project.
  *
@@ -27,6 +27,7 @@ const SCOPED_PROJECT_ID = 'proj-scoped';
 
 const publishedSchemaSchema = z.object({
   properties: z.record(z.string(), z.unknown()).optional(),
+  required: z.array(z.string()).optional(),
 });
 
 let server: Server;
@@ -91,32 +92,24 @@ describe('project-scoped grants', () => {
       await mcpServer.connect(serverTransport);
       await client.connect(clientTransport);
 
-      // The scoped schema omits project_id, so the empty call below matches a real client.
+      // Optional project_id allows the empty call below to use the scoped grant.
       const listed = await client.listTools();
       const getProject = listed.tools.find(
         (tool) => tool.name === 'describe_project',
       );
       const published = publishedSchemaSchema.parse(getProject?.inputSchema);
       const properties = published.properties ?? {};
-      expect(Object.keys(properties)).not.toContain('project_id');
+      expect(Object.keys(properties)).toContain('project_id');
+      expect(published.required ?? []).not.toContain('project_id');
       expect(Object.keys(properties)).not.toContain('projectId');
 
       const runSql = listed.tools.find((tool) => tool.name === 'run_sql');
       const runSqlPublished = publishedSchemaSchema.parse(runSql?.inputSchema);
       const runSqlProperties = runSqlPublished.properties ?? {};
       expect(Object.keys(runSqlProperties)).toContain('sql');
-      expect(Object.keys(runSqlProperties)).not.toContain('project_id');
+      expect(Object.keys(runSqlProperties)).toContain('project_id');
+      expect(runSqlPublished.required ?? []).not.toContain('project_id');
       expect(Object.keys(runSqlProperties)).not.toContain('projectId');
-      // The converter omits `path` when `project_id` is its only field.
-      const path = properties.path;
-      if (
-        path &&
-        typeof path === 'object' &&
-        'properties' in path &&
-        path.properties
-      ) {
-        expect(path.properties).not.toHaveProperty('project_id');
-      }
 
       const result = await client.callTool({
         name: 'describe_project',
@@ -126,6 +119,14 @@ describe('project-scoped grants', () => {
 
       // The granted project, not a fallback to "the only project on the account".
       expect(requestedPaths).toContain(`/api/v2/projects/${SCOPED_PROJECT_ID}`);
+
+      const requestCount = requestedPaths.length;
+      const conflicting = await client.callTool({
+        name: 'describe_project',
+        arguments: { project_id: 'another-project' },
+      });
+      expect(conflicting.isError).toBe(true);
+      expect(requestedPaths).toHaveLength(requestCount);
     } finally {
       // Both, even if connecting or closing one of them threw, and without
       // masking the assertion failure that got us here.
