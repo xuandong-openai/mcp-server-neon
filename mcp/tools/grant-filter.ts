@@ -23,6 +23,12 @@ const PROJECT_ID_GUIDANCE =
   'Required for an unscoped connection. May be omitted when the connection is ' +
   'scoped to one project; if provided, it must match that project.';
 
+function withProjectIdGuidance(description: string | undefined): string {
+  const base = description?.trim();
+  if (!base) return PROJECT_ID_GUIDANCE;
+  return `${/[.!?]$/.test(base) ? base : `${base}.`} ${PROJECT_ID_GUIDANCE}`;
+}
+
 function isZod4Object(schema: unknown): schema is z4.ZodObject<z4.ZodRawShape> {
   return (
     typeof schema === 'object' &&
@@ -89,11 +95,7 @@ function optionalHostProjectId(tool: NeonTool): NeonTool | null {
       .extend({
         project_id: shape.project_id
           .optional()
-          .describe(
-            [shape.project_id.description, PROJECT_ID_GUIDANCE]
-              .filter(Boolean)
-              .join(' '),
-          ),
+          .describe(withProjectIdGuidance(shape.project_id.description)),
       })
       .strict(),
   };
@@ -112,12 +114,9 @@ function optionalGeneratedProjectId(tool: NeonTool): NeonTool | null {
       project_id: z4
         .optional(projectIdSchema)
         .describe(
-          [
+          withProjectIdGuidance(
             z4.globalRegistry.get(projectIdSchema)?.description,
-            PROJECT_ID_GUIDANCE,
-          ]
-            .filter(Boolean)
-            .join(' '),
+          ),
         ),
     }),
   };

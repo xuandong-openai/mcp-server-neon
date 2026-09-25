@@ -89,6 +89,10 @@ describe('filterToolsForGrant', () => {
       throw new Error('run_sql must keep a Zod 3 object schema');
     }
     expect('project_id' in runSql.inputSchema.shape).toBe(true);
+    expect(runSql.inputSchema.shape.project_id.description).toBe(
+      'The ID of the project to execute the query against. Required for an unscoped connection. ' +
+        'May be omitted when the connection is scoped to one project; if provided, it must match that project.',
+    );
     expect('sql' in runSql.inputSchema.shape).toBe(true);
     expect(runSql.inputSchema.safeParse({ sql: 'select 1' }).success).toBe(
       true,
