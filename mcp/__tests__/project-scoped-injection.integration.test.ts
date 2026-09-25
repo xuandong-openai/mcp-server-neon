@@ -68,30 +68,43 @@ afterEach(async () => {
   );
 });
 
+async function connect(projectId: string | null) {
+  const { createMcpServer } = await import('../server/index');
+  const mcpServer = await createMcpServer({
+    apiKey: 'test-api-key',
+    authMethod: 'api_key_user',
+    account: { id: 'user_test', name: 'Test', email: 'test@example.com' },
+    app: {
+      name: 'mcp-server-neon',
+      transport: 'stream',
+      environment: 'development',
+      version: 'test',
+    },
+    grant: { projectId, scopes: null },
+  });
+  const client = new Client({ name: 'test-client', version: '1.0.0' });
+  const [clientTransport, serverTransport] =
+    InMemoryTransport.createLinkedPair();
+  await mcpServer.connect(serverTransport);
+  await client.connect(clientTransport);
+  return {
+    client,
+    close: () => Promise.allSettled([client.close(), mcpServer.close()]),
+  };
+}
+
+function errorText(result: Awaited<ReturnType<Client['callTool']>>): string {
+  const content = z
+    .array(z.object({ type: z.string(), text: z.string().optional() }))
+    .parse(result.content);
+  return content.map((part) => part.text ?? '').join('\n');
+}
+
 describe('project-scoped grants', () => {
   it('injects the granted project into a call that carries no arguments', async () => {
-    const { createMcpServer } = await import('../server/index');
-    const mcpServer = await createMcpServer({
-      apiKey: 'test-api-key',
-      authMethod: 'api_key_user',
-      account: { id: 'user_test', name: 'Test', email: 'test@example.com' },
-      app: {
-        name: 'mcp-server-neon',
-        transport: 'stream',
-        environment: 'development',
-        version: 'test',
-      },
-      grant: { projectId: SCOPED_PROJECT_ID, scopes: null },
-    });
-
-    const client = new Client({ name: 'test-client', version: '1.0.0' });
-    const [clientTransport, serverTransport] =
-      InMemoryTransport.createLinkedPair();
+    const { client, close } = await connect(SCOPED_PROJECT_ID);
 
     try {
-      await mcpServer.connect(serverTransport);
-      await client.connect(clientTransport);
-
       // Optional project_id allows the empty call below to use the scoped grant.
       const listed = await client.listTools();
       const getProject = listed.tools.find(
@@ -126,11 +139,83 @@ describe('project-scoped grants', () => {
         arguments: { project_id: 'another-project' },
       });
       expect(conflicting.isError).toBe(true);
+      expect(errorText(conflicting)).toContain(
+        `does not match this connection's project "${SCOPED_PROJECT_ID}"`,
+      );
       expect(requestedPaths).toHaveLength(requestCount);
+
+      const conflictingSql = await client.callTool({
+        name: 'run_sql',
+        arguments: { sql: 'select 1', project_id: 'another-project' },
+      });
+      expect(conflictingSql.isError).toBe(true);
+      expect(requestedPaths).toHaveLength(requestCount);
+
+      const matching = await client.callTool({
+        name: 'describe_project',
+        arguments: { project_id: SCOPED_PROJECT_ID },
+      });
+      expect(matching.isError).not.toBe(true);
+      expect(requestedPaths).toHaveLength(requestCount + 1);
     } finally {
-      // Both, even if connecting or closing one of them threw, and without
-      // masking the assertion failure that got us here.
-      await Promise.allSettled([client.close(), mcpServer.close()]);
+      await close();
+    }
+  });
+});
+
+describe('unscoped grants', () => {
+  it('uses an explicit project_id and rejects an omitted one before any API call', async () => {
+    const { client, close } = await connect(null);
+
+    try {
+      const explicit = await client.callTool({
+        name: 'describe_project',
+        arguments: { project_id: 'proj-explicit' },
+      });
+      expect(explicit.isError).not.toBe(true);
+      expect(requestedPaths).toEqual(['/api/v2/projects/proj-explicit']);
+
+      for (const [name, args] of [
+        ['describe_project', {}],
+        ['run_sql', { sql: 'select 1' }],
+      ] as const) {
+        const missing = await client.callTool({ name, arguments: args });
+        expect(missing.isError).toBe(true);
+        expect(errorText(missing)).toContain(
+          'project_id is required because this connection is not scoped to a project',
+        );
+      }
+      expect(requestedPaths).toHaveLength(1);
+    } finally {
+      await close();
+    }
+  });
+});
+
+describe('published schemas', () => {
+  it('match across unscoped and scoped grants for every shared tool', async () => {
+    const unscoped = await connect(null);
+    const scoped = await connect(SCOPED_PROJECT_ID);
+    const otherScoped = await connect('proj-other');
+
+    try {
+      const [unscopedTools, scopedTools, otherScopedTools] = await Promise.all(
+        [unscoped, scoped, otherScoped].map(async ({ client }) => {
+          const { tools } = await client.listTools();
+          return new Map(tools.map((tool) => [tool.name, tool.inputSchema]));
+        }),
+      );
+      expect(scopedTools.size).toBeGreaterThan(0);
+      for (const [name, schema] of scopedTools) {
+        expect(unscopedTools.get(name), name).toEqual(schema);
+        expect(otherScopedTools.get(name), name).toEqual(schema);
+      }
+    } finally {
+      await Promise.all([
+        unscoped.close(),
+        scoped.close(),
+        otherScoped.close(),
+      ]);
     }
   });
 });

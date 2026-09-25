@@ -80,8 +80,9 @@ describe.each(fixtures)('$kind stable project schema', (tool) => {
   it('requires an explicit ID for an unscoped full handler', () => {
     const args = argumentsFor(tool);
     const wireArgs = published(tool, unscoped).inputSchema.parse(args);
-    const fullArgs = injectProjectId(wireArgs, unscoped, tool);
-    expect(tool.inputSchema.safeParse(fullArgs).success).toBe(false);
+    expect(() => injectProjectId(wireArgs, unscoped, tool)).toThrow(
+      'project_id is required because this connection is not scoped to a project',
+    );
 
     const explicit = { ...args, project_id: 'project-b' };
     const explicitWire = published(tool, unscoped).inputSchema.parse(explicit);
@@ -114,7 +115,7 @@ describe.each(fixtures)('$kind stable project schema', (tool) => {
     const args = { ...argumentsFor(tool), project_id: 'project-b' };
     const wireArgs = published(tool, scoped).inputSchema.parse(args);
     expect(() => injectProjectId(wireArgs, scoped, tool)).toThrow(
-      'project_id must match the project scoped to this connection',
+      `does not match this connection's project "project-a"`,
     );
   });
 

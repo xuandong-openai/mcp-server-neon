@@ -316,7 +316,7 @@ describe('injectProjectId', () => {
     });
     expect(() =>
       injectProjectId({ project_id: 'other-project' }, scoped),
-    ).toThrow('project_id must match the project scoped to this connection');
+    ).toThrow(`does not match this connection's project "proj-123"`);
   });
 
   it('injects project_id for host and generated tools when grant is project-scoped', () => {
