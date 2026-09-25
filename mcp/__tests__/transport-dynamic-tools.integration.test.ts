@@ -241,9 +241,7 @@ describe('transport dynamic tool composition', () => {
       result?: { instructions?: string };
     };
     expect(initBody.result?.instructions).toContain('read-only permissions');
-    expect(initBody.result?.instructions).toContain(
-      'wherever its field description says it is required',
-    );
+    expect(initBody.result?.instructions).toContain('always pass `project_id`');
     expect(initBody.result?.instructions).not.toContain('proj_instructions');
 
     const tools = await listToolsForToken(oauthToken);
