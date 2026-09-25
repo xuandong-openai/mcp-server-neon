@@ -49,6 +49,7 @@ beforeEach(async () => {
             platform_id: 'aws',
             region_id: 'aws-us-east-2',
           },
+          uri: 'postgresql://owner:secret@loopback.invalid/neondb',
         }),
       );
     });
@@ -159,6 +160,45 @@ describe('project-scoped grants', () => {
       expect(requestedPaths).toHaveLength(requestCount + 1);
     } finally {
       await close();
+    }
+  });
+});
+
+const CONNECTION_ARGS = {
+  branch_id: 'br-loopback',
+  database_name: 'neondb',
+  role_name: 'owner',
+};
+
+describe('host tools on project-scoped and unscoped grants', () => {
+  it('reach the handler with the granted or explicit project', async () => {
+    const scoped = await connect(SCOPED_PROJECT_ID);
+    const unscoped = await connect(null);
+
+    try {
+      for (const args of [
+        CONNECTION_ARGS,
+        { ...CONNECTION_ARGS, project_id: SCOPED_PROJECT_ID },
+      ]) {
+        const result = await scoped.client.callTool({
+          name: 'get_connection_string',
+          arguments: args,
+        });
+        expect(result.isError).not.toBe(true);
+      }
+      const explicit = await unscoped.client.callTool({
+        name: 'get_connection_string',
+        arguments: { ...CONNECTION_ARGS, project_id: 'proj-explicit' },
+      });
+      expect(explicit.isError).not.toBe(true);
+
+      expect(requestedPaths).toEqual([
+        `/api/v2/projects/${SCOPED_PROJECT_ID}/connection_uri`,
+        `/api/v2/projects/${SCOPED_PROJECT_ID}/connection_uri`,
+        '/api/v2/projects/proj-explicit/connection_uri',
+      ]);
+    } finally {
+      await Promise.all([scoped.close(), unscoped.close()]);
     }
   });
 });
