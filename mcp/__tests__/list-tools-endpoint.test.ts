@@ -190,7 +190,7 @@ describe('/api/list-tools endpoint', () => {
       const body = await callListTools({ projectId: 'proj-123' });
       expect(
         body.notices?.some((n) =>
-          n.includes('supply it for an unscoped connection'),
+          n.includes('wherever its field description says it is required'),
         ),
       ).toBe(true);
       expect(body.notices?.join(' ')).not.toContain('proj-123');

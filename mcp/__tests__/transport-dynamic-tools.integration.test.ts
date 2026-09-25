@@ -242,7 +242,7 @@ describe('transport dynamic tool composition', () => {
     };
     expect(initBody.result?.instructions).toContain('read-only permissions');
     expect(initBody.result?.instructions).toContain(
-      'supply it for an unscoped connection',
+      'wherever its field description says it is required',
     );
     expect(initBody.result?.instructions).not.toContain('proj_instructions');
 

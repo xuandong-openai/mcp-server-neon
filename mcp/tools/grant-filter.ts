@@ -166,11 +166,12 @@ export function getAccessControlNotices(
   );
   if (hasProjectTools) {
     notices.push(
-      'Notice: For tools with `project_id`, supply it for an unscoped connection, even though the published schema marks it optional. ' +
+      'Notice: On an unscoped connection, pass `project_id` wherever its field description says it is required, even though the published schema marks it optional. ' +
         'A connection scoped to one project supplies it automatically when omitted; an explicit value must match the granted project. ' +
         'A project-scoped connection also hides project management tools such as list_projects and create_project. ' +
-        'To change project scope, remove or change the projectId query param in the MCP server URL and reconnect, ' +
-        'or, if the project was chosen on the OAuth consent page, log out and authorize again with "All projects you can access".',
+        'To change project scope, change or remove the projectId query param in the MCP server URL and reconnect. ' +
+        'With OAuth, the project is fixed when the connection is authorized: log out and authorize again, ' +
+        'and choose "All projects you can access" on the consent page to remove scoping.',
     );
   }
   if (grant.unknownCategories?.length) {
@@ -262,18 +263,6 @@ function schemaHasProjectId(schema: NeonTool['inputSchema']): boolean {
   return false;
 }
 
-function schemaRequiresProjectId(schema: NeonTool['inputSchema']): boolean {
-  if (schema instanceof z.ZodObject) {
-    const field = (schema.shape as Record<string, z.ZodTypeAny>).project_id;
-    return field !== undefined && !field.safeParse(undefined).success;
-  }
-  if (isZod4Object(schema)) {
-    const field = schema.shape.project_id;
-    return field !== undefined && !z4.safeParse(field, undefined).success;
-  }
-  return false;
-}
-
 export function injectProjectId(
   args: Record<string, unknown>,
   grant: GrantContext,
@@ -286,11 +275,7 @@ export function injectProjectId(
     return args;
   }
   if (!grant.projectId) {
-    if (
-      args.project_id === undefined &&
-      tool?.inputSchema &&
-      schemaRequiresProjectId(tool.inputSchema)
-    ) {
+    if (args.project_id === undefined && tool?.inputSchema) {
       throw new InvalidArgumentError(
         'project_id is required because this connection is not scoped to a project. ' +
           'Pass the target project ID, for example one returned by list_projects.',

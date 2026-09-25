@@ -239,7 +239,9 @@ describe('getAccessControlNotices', () => {
     const scoped = getAccessControlNotices(grant({ projectId: 'p-1' }), true);
     const unscoped = getAccessControlNotices(grant(), true);
     expect(scoped).toEqual(unscoped);
-    expect(scoped.join(' ')).toContain('supply it for an unscoped connection');
+    expect(scoped.join(' ')).toContain(
+      'wherever its field description says it is required',
+    );
     expect(scoped.join(' ')).toContain('an explicit value must match');
     expect(scoped.join(' ')).not.toContain('p-1');
   });
